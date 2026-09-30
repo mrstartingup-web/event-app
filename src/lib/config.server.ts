@@ -1,3 +1,10 @@
+import {
+  type PublicConfig,
+  UNCONFIGURED_PUBLIC_CONFIG,
+  whatsappLink,
+  DEFAULT_WHATSAPP_MESSAGE,
+} from "./public-config";
+
 /**
  * Server-only configuration.
  *
@@ -72,14 +79,13 @@ export function getWhatsAppNumber(): string | null {
   return read(ENV.whatsappNumber);
 }
 
-/** WhatsApp deep link with a prefilled message, or null when unset. */
+/**
+ * WhatsApp deep link with a prefilled message, or null when unset. The link is
+ * built by the shared `whatsappLink()` helper so the server, the React button
+ * and any future email share one definition of "a usable number".
+ */
 export function getWhatsAppLink(message?: string): string | null {
-  const number = getWhatsAppNumber();
-  if (!number) return null;
-  const digits = number.replace(/\D/g, "");
-  if (!digits) return null;
-  const text = message ? `?text=${encodeURIComponent(message)}` : "";
-  return `https://wa.me/${digits}${text}`;
+  return whatsappLink(getWhatsAppNumber(), message ?? DEFAULT_WHATSAPP_MESSAGE);
 }
 
 /**
@@ -138,22 +144,25 @@ export function describeConfig(): BackendStatus {
 }
 
 /**
- * What the browser is allowed to know. Only SUPABASE_URL and SUPABASE_ANON_KEY
- * leave the server — and never the service-role key, the DB URL, or the admin
- * email.
+ * What the browser is allowed to know. Only SUPABASE_URL, SUPABASE_ANON_KEY and
+ * the Planner's WhatsApp number leave the server — never the service-role key,
+ * the DB URL, or the admin email. The type lives in `./public-config` so the
+ * browser modules can name its shape without importing this server-only file.
  */
-export type PublicConfig = {
-  configured: boolean;
-  supabaseUrl: string | null;
-  supabaseAnonKey: string | null;
-  missing: string[];
-};
-
 export function getPublicConfig(): PublicConfig {
+  const supabaseUrl = getSupabaseUrl();
+  const supabaseAnonKey = getSupabaseAnonKey();
+  // With nothing configured at all, answer with the canonical unconfigured
+  // payload — the same object the browser falls back to when the request fails,
+  // so there is exactly one "not connected yet" shape in the app.
+  if (supabaseUrl === null && supabaseAnonKey === null && getWhatsAppNumber() === null) {
+    return UNCONFIGURED_PUBLIC_CONFIG;
+  }
   return {
-    configured: isBackendConfigured(),
-    supabaseUrl: getSupabaseUrl(),
-    supabaseAnonKey: getSupabaseAnonKey(),
+    configured: supabaseUrl !== null && supabaseAnonKey !== null,
+    supabaseUrl,
+    supabaseAnonKey,
+    whatsappNumber: getWhatsAppNumber(),
     missing: [ENV.supabaseUrl, ENV.supabaseAnonKey].filter((name) => read(name) === null),
   };
 }

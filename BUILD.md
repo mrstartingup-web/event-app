@@ -4,14 +4,18 @@ How to run, configure, migrate, seed and deploy this app. Written for whoever
 picks this up next (including the next stage of work), so it repeats the "why",
 not just the commands.
 
-**Stage status.** Stage 1a (this hand-off) delivered the database foundation:
+**Stage status.** Stage 1a delivered the database foundation:
 `supabase/migrations/0001_init.sql` (full schema, Row Level Security on every
 table, the one-admin rule, the date-availability rule, storage buckets and
 policies), `supabase/seed.sql`, the RLS test script, the environment plumbing
 (`.env.example`, `src/lib/config.server.ts`, `/api/config`) and the page at
-`/status` that reports whether the backend is configured. **Stage 1b** still has
-to build the app shell, navigation, the "Chat on WhatsApp" button and the
-email/password auth UI. Stage 2 adds the portfolio and catalog.
+`/status` that reports whether the backend is configured. **Stage 1b** (branch
+`stage-1b-app-foundation`) added the app shell, mobile-first navigation, the
+design-system primitives, email/password sign-up and sign-in, the customer
+account page, the `/admin` gate and the "Chat on WhatsApp" button. **Stage 2**
+adds the portfolio gallery, project detail pages and the item catalog (public
+pages plus the admin management pages). Sections 11–14 below are the Stage 1b
+hand-off notes; read them before touching auth or `/admin`.
 
 ---
 
@@ -40,11 +44,19 @@ curl -s http://localhost:3000/api/config
 
 Pages that exist today:
 
-| Path         | What it is                                                              |
-| ------------ | ----------------------------------------------------------------------- |
-| `/`          | Placeholder landing page (replaced in Stage 1b)                         |
-| `/status`    | Reports whether the backend is configured — names only, never a value   |
-| `/api/config`| JSON: `SUPABASE_URL` + `SUPABASE_ANON_KEY` and nothing else              |
+| Path          | What it is                                                                          |
+| ------------- | ----------------------------------------------------------------------------------- |
+| `/`           | Home page — what the Planner does, a labelled SAMPLE price list, portfolio/catalog placeholders marked "next stage" |
+| `/login`      | Email/password sign-in. Optional `?redirect=/admin` (whitelisted to `/account` or `/admin`) decides where a successful sign-in lands |
+| `/signup`     | Email/password sign-up; the role is decided by the database, never by the form        |
+| `/account`    | Signed-in customer's own details. A signed-out visitor is sent to `/login`            |
+| `/admin`      | The Planner's dashboard. Anyone else gets the same 404 view as a bad URL (section 12) |
+| `/status`     | Reports whether the backend is configured — variable names only, never a value        |
+| `/api/config` | JSON: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `WHATSAPP_NUMBER` and nothing else         |
+
+All seven routes answer **200** with no environment variables set (checked with
+`curl -o /dev/null -w '%{http_code}'`); with the backend unconfigured each page
+renders its honest "not connected yet" state instead of failing.
 
 ## 3. Environment variables
 
@@ -61,19 +73,20 @@ published and a secret that only lives there is simply missing in production.
 | `SUPABASE_SERVICE_ROLE_KEY` | applying migrations, admin tasks    | **yes** | server only; bypasses RLS; never send to a browser         |
 | `SUPABASE_DB_URL`           | `psql` migrations                   | **yes** | e.g. `postgresql://postgres.<ref>:<pw>@<host>:5432/postgres` |
 | `ADMIN_EMAIL`               | the one-admin rule                  | no      | the Planner's login email; push it into `app_config`       |
-| `WHATSAPP_NUMBER`           | "Chat on WhatsApp" button (Stage 1b)| no      | digits only, international, e.g. `60123456789`             |
+| `WHATSAPP_NUMBER`           | "Chat on WhatsApp" button           | no      | digits only, international, e.g. `60123456789`. Unset → the button renders nothing at all, and no `wa.me` link exists anywhere in the HTML |
 
 Nothing is hardcoded. Everything is read in one place, `src/lib/config.server.ts`
 (a `.server` module, so TanStack Start refuses to bundle it into client code).
 `/api/config` is the only route that exposes anything, and it exposes exactly
-`SUPABASE_URL` and `SUPABASE_ANON_KEY`.
-
-Check the current state without printing a value:
+`SUPABASE_URL`, `SUPABASE_ANON_KEY` and `WHATSAPP_NUMBER`. Verified with the
+service-role key, the DB URL and the admin email **set** to known dummy values:
+the response still contained only those three fields, and grepping it for the
+dummy secrets found nothing.
 
 ```bash
 curl -s http://localhost:3000/api/config
 # {"configured":false,"supabaseUrl":null,"supabaseAnonKey":null,
-#  "missing":["SUPABASE_URL","SUPABASE_ANON_KEY"]}
+#  "whatsappNumber":null,"missing":["SUPABASE_URL","SUPABASE_ANON_KEY"]}
 ```
 
 ## 4. Create the database
@@ -275,18 +288,191 @@ or a Netlify function wrapping `dist/server/server.js`); the Vercel path above i
 the one this repository is set up for. The environment variables are the same
 six, set in Netlify's UI.
 
-## 11. Known limitations and notes for the next stage
+## 11. The app shell, navigation and the auth flow (Stage 1b)
 
-- **Not built yet, by design:** the app shell, navigation, auth UI and the
-  "Chat on WhatsApp" button (Stage 1b); the portfolio, catalog and their admin
-  pages (Stage 2); the editor (3); orders and quotes (4); the admin calendar (5);
-  chat (6); reviews and notifications (7). The database already supports all of
-  them — that was the point of writing the whole schema now.
-- `/` is still the platform placeholder and `__root.tsx` still has the title
-  "My site": Stage 1b owns both.
-- `@supabase/supabase-js` is **not installed yet** — Stage 1b needs it (auth UI,
-  the browser client built from `/api/config`, the server client using the
-  service-role key). The config plumbing it needs already exists.
+**Files.** `src/routes/__root.tsx` is the shell (`<head>` meta, header, backend
+banner, footer, providers). `src/components/` holds the chrome
+(`site-header`, `site-footer`, `brand`, `backend-banner`, `route-states`,
+`whatsapp-button`) and `src/components/ui/` the design-system primitives
+(`Button` + `buttonClasses`, `Card`, `Field`/`Input`, `Alert`, `EmptyState`,
+`SectionHeading`, `Container`, `Badge`). `src/lib/` holds config, auth, money
+formatting and class merging. Design tokens (colours, radii, fonts) are Tailwind
+v4 `@theme` values in `src/styles/app.css`.
+
+**Public config reaches the browser as root loader data.** `__root.tsx` calls a
+`createServerFn` handler that imports `src/lib/config.server.ts`, so the WhatsApp
+button and the "backend not connected yet" banner are already correct in the
+first byte of HTML — the browser never fetches `/api/config` itself. Saving a
+secret on the host takes effect on the next request, with no rebuild.
+
+**Auth is browser-side** (`src/lib/auth.tsx`): supabase-js keeps the session in
+localStorage and refreshes it, so a return visit is still signed in. Four states,
+and every guarded page branches on them explicitly:
+
+| `status`      | Meaning                                        | What pages must do                                  |
+| ------------- | ---------------------------------------------- | --------------------------------------------------- |
+| `loading`     | Configured, session not read yet (also SSR)     | render "one moment" — never content                 |
+| `signed-out`  | No session                                      | send to `/login`                                    |
+| `signed-in`   | Session; `profile`/`isAdmin` follow             | render                                              |
+| `unavailable` | No Supabase credentials                         | the honest "not connected yet" state                |
+
+`loading` is the initial state on the server **and** on the first client render
+(the server cannot know a session). That is deliberate — do not replace it with
+an optimistic signed-in state, and keep the header's loading placeholder, or
+React reports a hydration mismatch.
+
+`isAdmin` is `profile?.role === 'admin'` and is a **display** decision only. The
+role itself is assigned once at signup by the `handle_new_user()` trigger from
+`app_config.admin_email`, and `enforce_profiles_role_immutable` rejects any
+change through the API — including with the service-role key. Row Level Security
+is what actually refuses an admin-only read, no matter what the client believes.
+
+**Adding a page.** Create `src/routes/<name>.tsx` with `createFileRoute("/<name>")`
+and a `head()` for the title/meta; `src/routeTree.gen.ts` is regenerated by the
+build, so never hand-edit it. `/login` reads one **optional** search param,
+`redirect`, whitelisted to `/account` or `/admin` (an unchecked redirect target
+from a URL is an open-redirect bug). It is optional on purpose: a *required*
+search param made the router canonicalise a plain `GET /login` into a redirect to
+`/login?redirect=%2Faccount` — a self-redirect that cost the visitor a hop, and it
+forced every `<Link to="/login">` to pass a value. If you add a route with search
+params, keep any param with a default optional, or every `<Link>` to it needs the
+value.
+
+Prices always go through `formatRM()` in `src/lib/money.ts` → `RM 1,250.00`
+(Malaysian Ringgit, no other currency anywhere).
+
+## 12. The `/admin` gate — and what a denied visitor actually gets
+
+`/admin` (Stage 1b) is a **presentation** gate; the database is the authority.
+
+| State                                   | What `/admin` renders                                  |
+| --------------------------------------- | ------------------------------------------------------ |
+| session still being read (`loading`)    | "One moment…", never dashboard content                 |
+| signed out                              | "One moment…" then a client navigation to `/login?redirect=/admin` |
+| signed in, `role != 'admin'`             | the **same 404 view** as a URL that does not exist      |
+| signed in, `role = 'admin'`              | the Planner dashboard (sections marked with their stage) |
+| no Supabase credentials (`unavailable`)  | the same 404 view — with no backend nobody is a proven admin |
+
+Rules to keep if you touch this route:
+
+- The dashboard's heading, cards and "Signed in as the Planner" badge live inside
+  the guarded branch only. For everyone else the response, **including the
+  `<title>` and meta**, must contain nothing admin-shaped. That is why this route
+  deliberately declares no `title` (a static "Planner dashboard — …" title was
+  visible to anonymous visitors while the body hid everything).
+- The 404 view is shared with `notFoundComponent`, so anyone probing the URL
+  cannot tell "you are not allowed" from "this page does not exist".
+- `/admin` is not the security boundary. Every admin-only table and bucket has an
+  RLS policy calling `public.is_admin()`; hiding the page is cosmetic.
+
+Re-check it in one command (anonymous request, expect **0**):
+
+```bash
+curl -s http://localhost:3000/admin | tr -d '\000' \
+  | grep -aic -E "planner dashboard|planner only|orders|signed in as the planner"
+```
+
+(The `tr -d '\000'` is needed: the SSR stream can contain NUL bytes, which makes
+`grep` treat the response as binary and print only "binary file matches".)
+
+## 13. Testing the pages with no credentials (and with fake ones)
+
+Everything must render sensibly with **zero** environment variables, and that is
+also how to test without a Supabase project:
+
+1. **No env at all** — the real published state, and the one to check after a
+   publish. Every page renders its "not connected yet" state, the header shows
+   Sign in / Create account, `useAuth()` reports `unavailable`, `/admin` shows the
+   404 view, and **no `wa.me` link exists anywhere** (`grep -c wa.me` → 0).
+2. **Fake credentials** to exercise the *configured* paths (a signed-out visitor,
+   the admin gate, the WhatsApp button) without a backend: serve the built SSR
+   handler on a private loopback port and hand it dummy values. It never talks to
+   Supabase successfully, which is the point — a fetch to a `*.supabase.co` host
+   that does not exist resolves to "signed out".
+
+   ```bash
+   cat > /tmp/probe-server.ts <<'TS'
+   import handler from "/home/team/shared/site/dist/server/server.js";
+   const CLIENT_DIR = "/home/team/shared/site/dist/client";
+   const h = handler as { fetch: (r: Request) => Response | Promise<Response> };
+   Bun.serve({
+     port: 3999, hostname: "127.0.0.1", idleTimeout: 255,
+     async fetch(req) {
+       const { pathname } = new URL(req.url);
+       if (pathname !== "/") {
+         const file = Bun.file(CLIENT_DIR + pathname);
+         if (await file.exists()) return new Response(file);   // CSS/JS, or the page is unstyled
+       }
+       return h.fetch(req);
+     },
+   });
+   TS
+   WHATSAPP_NUMBER=60123456789 SUPABASE_URL=https://probe.supabase.co \
+   SUPABASE_ANON_KEY=dummy bun /tmp/probe-server.ts &   # run `bun run build` first
+   ```
+
+   Then `curl -s http://127.0.0.1:3999/api/config` and open
+   `http://127.0.0.1:3999/admin` in a browser — a signed-out visitor lands on
+   `/login?redirect=%2Fadmin` with no admin content. **Serving `dist/client` in
+   that wrapper matters**: without it the page has no CSS and any layout
+   screenshot is meaningless. Kill the probe when you are done — only port 3000
+   is the live site.
+3. **Mobile.** Most customers arrive from WhatsApp on a phone, so check 360px
+   wide before reporting:
+
+   ```bash
+   agent-browser set viewport 360 740
+   agent-browser open "http://localhost:3000/"
+   agent-browser screenshot /tmp/home-360.png
+   agent-browser eval "JSON.stringify({overflow:[...document.querySelectorAll('*')].filter(e=>e.getBoundingClientRect().right>innerWidth+1).map(e=>e.tagName)})"
+   ```
+
+   Expect `document.documentElement.scrollWidth <= innerWidth` (no sideways
+   scroll) and an empty overflow list. At 360px the header is brand + menu button
+   only; the WhatsApp button joins the header from `sm` up and otherwise lives in
+   the menu panel (plus each page's own call to action).
+
+Never put a real secret in these probes, and do not start a second long-lived
+server on port 3000.
+
+## 14. Git workflow, branches and PRs
+
+- **Repo:** `mrstartingup-web/event-app` is `origin` of `/home/team/shared/site`,
+  and that directory is the only working tree **and** the live site. Do not clone
+  it elsewhere and build there.
+- **Baseline:** the first push was committed straight to `main`. After that, one
+  branch per stage (`stage-1b-app-foundation`, `stage-2a-…`), pushed, with a PR
+  against `main`. **The engineer does not merge their own PR** — the lead reviews
+  and merges.
+- **Definition of done:** `bun install`, `bun run build` and `bunx tsc --noEmit`
+  clean, `bun run publish`, the touched routes curled and read, then commit → push
+  → PR URL. Finish with `main` checked out and a clean working tree.
+- `bunx tsc --noEmit` also reports six **pre-existing** errors in `serve.ts` (the
+  platform's server wrapper — `Bun`, `import.meta.dir`). They are not app code;
+  leave that file alone and check app types with
+  `bunx tsc --noEmit | grep -v '^serve.ts('`, which should print nothing.
+- Never commit `.env`, real secrets, `node_modules`, `dist`, `.run` or `.vercel`
+  (`.gitignore` covers them; `.env.example` is committed on purpose and is the
+  only place variable names appear).
+
+## 15. Known limitations and notes for the next stage
+
+- **Not built yet, by design:** the portfolio, catalog and their admin
+  management pages (Stage 2); the editor (3); orders and quotes (4); the admin
+  calendar (5); chat (6); reviews and notifications (7). The database already
+  supports all of them — that was the point of writing the whole schema first.
+- The home page shows a **clearly labelled SAMPLE** price list, not real prices,
+  and the portfolio/catalog blocks are marked "next stage" rather than filled with
+  invented projects. Stage 2 replaces the samples with real data and should delete
+  `SAMPLE_PRICES` from `src/routes/index.tsx` when it does.
+- The header/footer link "Portfolio" and "Catalog" as non-clickable "soon" labels
+  until those pages exist — a link that 404s is worse than an honest label. Stage 2
+  turns them into `<Link>`s.
+- `/account` and `/admin` show the profile the database created at signup and a
+  list of what is still coming; there is nothing else to show until later stages.
+- Email confirmation is whatever the Supabase project is set to; `/signup` handles
+  both (`needsEmailConfirmation`) and says so honestly when an address already
+  exists rather than pretending an email was sent.
 - `projects.event_type` and `catalog_items.category` are free text on purpose
   (the owner's list says "wedding, birthday, corporate, etc."), so a new event
   type never needs a migration. The UI groups by these values.

@@ -4,8 +4,10 @@ import { getPublicConfig } from "~/lib/config.server";
 
 /**
  * GET /api/config — the ONLY configuration the browser is allowed to have:
- * SUPABASE_URL and SUPABASE_ANON_KEY, both of which are public by design (Row
- * Level Security, not the anon key, is what protects customer data).
+ * SUPABASE_URL, SUPABASE_ANON_KEY and the Planner's WhatsApp number. The first
+ * two are public by design (Row Level Security, not the anon key, is what
+ * protects customer data); the WhatsApp number is the business phone number the
+ * site prints anyway, and the "Chat on WhatsApp" button is built from it.
  *
  * The service-role key, the Postgres connection string and the admin email live
  * in the same server-only module and are never included in this response. Check
@@ -13,9 +15,9 @@ import { getPublicConfig } from "~/lib/config.server";
  *   curl -s http://localhost:3000/api/config
  * With no environment variables set it answers
  *   {"configured":false,"supabaseUrl":null,"supabaseAnonKey":null,
- *    "missing":["SUPABASE_URL","SUPABASE_ANON_KEY"]}
- * and the site keeps working — later stages render their "backend not
- * configured yet" state instead of crashing.
+ *    "whatsappNumber":null,"missing":["SUPABASE_URL","SUPABASE_ANON_KEY"]}
+ * and every page renders its "backend not configured yet" state instead of
+ * crashing.
  */
 export const Route = createFileRoute("/api/config")({
   server: {

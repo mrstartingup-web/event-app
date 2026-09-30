@@ -1,8 +1,120 @@
 @import "tailwindcss";
 
+/* ===========================================================================
+   Bloom & Aisle Events — design system (Tailwind v4)
+   ---------------------------------------------------------------------------
+   Tailwind v4 reads its design tokens from the `@theme` block below: every
+   `--color-*`, `--font-*`, `--radius-*` and `--shadow-*` entry automatically
+   becomes utilities (`bg-canvas`, `text-ink`, `font-display`, `rounded-card`,
+   `shadow-soft`, …), so components never hardcode a hex value.
+
+   The brand is a single event planner and decorator, not a dashboard: warm
+   off-white canvas, soft terracotta primary, antique-gold accent, a serif for
+   headings and a plain sans for body copy. Mobile-first — most customers arrive
+   from a WhatsApp or Instagram link on a phone, so the base styles target a
+   360px viewport and the layout only grows at `sm`/`lg`.
+   =========================================================================== */
+@theme {
+  /* -- Typography --------------------------------------------------------- */
+  /* System stacks on purpose: no remote font request means the page never
+     flashes unstyled text, works offline, and renders identically in an
+     environment with no network access. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino,
+    "Book Antiqua", Georgia, "Times New Roman", serif;
+
+  /* -- Core palette ------------------------------------------------------- */
+  --color-canvas: #fdfaf6; /* page background, warm off-white */
+  --color-canvas-sunk: #f6f0e9; /* subtle banded section background */
+  --color-surface: #ffffff; /* cards, header, footer */
+  --color-ink: #2a2420; /* headings and body copy */
+  --color-ink-soft: #574d46; /* secondary copy */
+  --color-ink-muted: #8a7d73; /* captions, hints, meta */
+  --color-line: #ece1d7; /* hairline borders */
+  --color-line-strong: #dbcabb; /* emphasised borders / dividers */
+
+  /* -- Brand -------------------------------------------------------------- */
+  --color-primary: #a8635a; /* terracotta rose */
+  --color-primary-hover: #8f5148;
+  --color-primary-soft: #f7ebe7; /* tinted background */
+  --color-primary-ink: #7a443d; /* text on the tint */
+  --color-accent: #b08d4f; /* antique gold */
+  --color-accent-soft: #f7f0e2;
+  --color-accent-ink: #7d6231;
+
+  /* -- Feedback ----------------------------------------------------------- */
+  --color-success: #4f7a5b;
+  --color-success-soft: #eef4ef;
+  --color-success-ink: #33553c;
+  --color-warning: #a97a2c;
+  --color-warning-soft: #fdf4e3;
+  --color-warning-ink: #7a5716;
+  --color-danger: #a4443c;
+  --color-danger-soft: #fbecea;
+  --color-danger-ink: #7c322b;
+  --color-info: #4b6b86;
+  --color-info-soft: #eef3f7;
+  --color-info-ink: #33506a;
+
+  /* -- WhatsApp (brand green, used only for the WhatsApp CTA) ------------- */
+  --color-wa: #25d366;
+  --color-wa-hover: #1da851;
+
+  /* -- Radii -------------------------------------------------------------- */
+  --radius-card: 1rem;
+  --radius-field: 0.75rem;
+  --radius-pill: 9999px;
+
+  /* -- Shadows ------------------------------------------------------------ */
+  --shadow-soft: 0 1px 2px rgba(42, 36, 32, 0.04),
+    0 10px 30px -18px rgba(42, 36, 32, 0.25);
+  --shadow-lift: 0 2px 4px rgba(42, 36, 32, 0.05),
+    0 18px 40px -22px rgba(42, 36, 32, 0.35);
+}
+
 @layer base {
-  html,
+  html {
+    /* Stop iOS Safari inflating body copy in landscape. */
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
   body {
-    @apply bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
+    @apply bg-canvas font-sans text-ink antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display font-normal tracking-tight text-ink;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* A single, visible focus style for every interactive element. */
+  :where(a, button, input, select, textarea, summary):focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary;
+  }
+
+  ::selection {
+    @apply bg-primary-soft text-primary-ink;
+  }
+
+  /* Honour a reduced-motion preference: no animated entrances anywhere. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
