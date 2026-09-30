@@ -1,12 +1,31 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 
+import {
+  Alert,
+  Badge,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Container,
+  SectionHeading,
+} from "~/components/ui";
+
 /**
- * Reads the configuration on the server. The `.server` module is imported
- * dynamically inside the handler on purpose: a static import of a `.server`
- * file from a route (which is also client code) is what TanStack Start's import
- * protection rejects, and the dynamic import keeps the service-role key, the DB
- * URL and the admin email out of the browser bundle for certain.
+ * `/status` — the canonical answer to "is the backend wired up yet?".
+ *
+ * It is the one page allowed to name environment variables. It reports variable
+ * NAMES and booleans through `describeConfig()` and never a value, so it is safe
+ * to leave public: seeing `SUPABASE_SERVICE_ROLE_KEY` in the "set" list tells a
+ * visitor nothing they can use.
+ *
+ * The `.server` module is imported dynamically inside the handler on purpose: a
+ * static import of a `.server` file from a route (which is also client code) is
+ * exactly what TanStack Start's import protection rejects, and the dynamic
+ * import keeps the service-role key, the DB URL and the admin email out of the
+ * browser bundle for certain.
  */
 const getBackendStatus = createServerFn({ method: "GET" }).handler(async () => {
   const { describeConfig } = await import("~/lib/config.server");
@@ -15,7 +34,13 @@ const getBackendStatus = createServerFn({ method: "GET" }).handler(async () => {
 
 export const Route = createFileRoute("/status")({
   head: () => ({
-    meta: [{ title: "Backend status — Bloom & Aisle Events" }],
+    meta: [
+      { title: "Backend status — Bloom & Aisle Events" },
+      {
+        name: "description",
+        content: "Whether this site is connected to its database and storage yet.",
+      },
+    ],
   }),
   loader: () => getBackendStatus(),
   component: StatusPage,
@@ -25,107 +50,103 @@ function StatusPage() {
   const status = Route.useLoaderData();
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col gap-6 px-5 py-10 sm:px-6">
-      <header className="flex flex-col gap-1">
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-          Bloom &amp; Aisle Events
-        </p>
-        <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">Backend status</h1>
-      </header>
+    <Container className="py-12 sm:py-16">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+        <SectionHeading
+          level={1}
+          eyebrow="Setup"
+          title="Backend status"
+          description="What the site knows about its own configuration. This page names variables and never prints a value."
+        />
 
-      <StatusBanner configured={status.configured} hasSupabaseUrl={status.present.includes("SUPABASE_URL")} />
+        {status.configured ? (
+          <Alert tone="success" title="Backend configured">
+            The Supabase URL and anon key are present, so pages use live data instead of sample
+            content, and accounts can be used.
+          </Alert>
+        ) : (
+          <Alert tone="warning" title="Backend not connected yet">
+            No Supabase credentials are present. Every page falls back to clearly-labelled sample
+            content, and signing in is switched off. Nothing is broken — there is simply no database
+            to talk to.
+          </Alert>
+        )}
 
-      <section className="rounded-xl border border-slate-200 p-5">
-        <h2 className="text-sm font-semibold text-slate-900">Environment variables</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Names only — this page never displays a key or secret value.
-        </p>
+        <Card>
+          <CardHeader>
+            <CardTitle>Environment variables</CardTitle>
+            <CardDescription>
+              Names only. A value is never displayed here, or anywhere else on this site.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <VariableList title="Set" names={status.present} tone="ok" />
+            <VariableList title="Still needed" names={status.missing} tone="missing" />
+          </CardContent>
+        </Card>
 
-        <div className="mt-4 flex flex-col gap-3">
-          <VariableList title="Set" names={status.present} tone="ok" />
-          <VariableList title="Still needed" names={status.missing} tone="missing" />
+        {status.configured ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Connection</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2 text-sm text-ink-soft">
+              <p>
+                Supabase host:{" "}
+                <code className="font-mono text-ink">{status.supabaseHost ?? "unknown"}</code>
+              </p>
+              <p>
+                The browser fetches its public config from{" "}
+                <a href="/api/config" className="font-medium text-primary-ink underline">
+                  /api/config
+                </a>{" "}
+                — that is the only configuration it is given, and it contains no secret.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>What to do next</CardTitle>
+              <CardDescription>Written for whoever sets the site up.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-ink-soft">
+                <li>
+                  Locally: copy <code className="font-mono text-ink">.env.example</code> to{" "}
+                  <code className="font-mono text-ink">.env</code> and fill in{" "}
+                  <code className="font-mono text-ink">SUPABASE_URL</code> and{" "}
+                  <code className="font-mono text-ink">SUPABASE_ANON_KEY</code>.
+                </li>
+                <li>
+                  Live: add the same values to the host&rsquo;s environment — they are read from{" "}
+                  <code className="font-mono text-ink">process.env</code> at request time, not from a
+                  file, so nothing has to be rebuilt.
+                </li>
+                <li>
+                  Then follow <code className="font-mono text-ink">BUILD.md</code> to apply the
+                  database migration and set the Planner&rsquo;s email.
+                </li>
+              </ol>
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3 text-sm text-ink-soft">
+          <Link to="/" className="underline">
+            Back to home
+          </Link>
+          <span aria-hidden="true">·</span>
+          <span>
+            {status.hasWhatsAppNumber ? (
+              <Badge tone="success">WhatsApp button active</Badge>
+            ) : (
+              <Badge tone="muted">WhatsApp button hidden (no number set)</Badge>
+            )}
+          </span>
         </div>
-      </section>
-
-      {status.configured ? (
-        <section className="rounded-xl border border-slate-200 p-5 text-sm text-slate-700">
-          <p>
-            Supabase host: <code className="font-mono text-slate-900">{status.supabaseHost ?? "unknown"}</code>
-          </p>
-          <p className="mt-2">
-            The browser can fetch its public config from{" "}
-            <a href="/api/config" className="font-medium underline">
-              /api/config
-            </a>
-            .
-          </p>
-        </section>
-      ) : (
-        <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-          <h2 className="font-semibold">What to do next</h2>
-          <ol className="mt-2 list-decimal space-y-1 pl-5">
-            <li>
-              Locally: copy <code className="font-mono">.env.example</code> to{" "}
-              <code className="font-mono">.env</code> and fill in{" "}
-              <code className="font-mono">SUPABASE_URL</code> and{" "}
-              <code className="font-mono">SUPABASE_ANON_KEY</code>.
-            </li>
-            <li>
-              Live: add the same variables to the host&rsquo;s environment (they are read from{" "}
-              <code className="font-mono">process.env</code>, not from a file) and restart the site.
-            </li>
-            <li>
-              Then follow <code className="font-mono">BUILD.md</code> to apply the database migrations.
-            </li>
-          </ol>
-          <p className="mt-3">
-            Nothing is broken in the meantime: every page falls back to sample content while the backend
-            is unconfigured.
-          </p>
-        </section>
-      )}
-
-      <footer className="mt-auto text-xs text-slate-500">
-        <Link to="/" className="underline">
-          Back to home
-        </Link>
-      </footer>
-    </main>
-  );
-}
-
-function StatusBanner({ configured, hasSupabaseUrl }: { configured: boolean; hasSupabaseUrl: boolean }) {
-  const label = configured
-    ? "Backend configured"
-    : hasSupabaseUrl
-      ? "Backend partly configured"
-      : "Backend not configured yet";
-
-  const detail = configured
-    ? "Supabase URL and anon key are present. Live data will be used instead of sample content."
-    : "No Supabase credentials are present, so the site is running on clearly-labelled sample content.";
-
-  return (
-    <div
-      className={
-        configured
-          ? "rounded-xl border border-emerald-200 bg-emerald-50 p-5"
-          : "rounded-xl border border-slate-300 bg-slate-50 p-5"
-      }
-    >
-      <p
-        className={
-          configured
-            ? "text-base font-semibold text-emerald-900"
-            : "text-base font-semibold text-slate-900"
-        }
-      >
-        {label}
-      </p>
-      <p className={configured ? "mt-1 text-sm text-emerald-800" : "mt-1 text-sm text-slate-600"}>
-        {detail}
-      </p>
-    </div>
+      </div>
+    </Container>
   );
 }
 
@@ -140,21 +161,16 @@ function VariableList({
 }) {
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{title}</p>
       {names.length === 0 ? (
-        <p className="mt-1 text-sm text-slate-500">none</p>
+        <p className="mt-1 text-sm text-ink-muted">none</p>
       ) : (
-        <ul className="mt-1 flex flex-wrap gap-2">
+        <ul className="mt-2 flex flex-wrap gap-2">
           {names.map((name) => (
-            <li
-              key={name}
-              className={
-                tone === "ok"
-                  ? "rounded-md bg-emerald-100 px-2 py-1 font-mono text-xs text-emerald-900"
-                  : "rounded-md bg-slate-100 px-2 py-1 font-mono text-xs text-slate-700"
-              }
-            >
-              {name}
+            <li key={name}>
+              <Badge tone={tone === "ok" ? "success" : "muted"} className="font-mono">
+                {name}
+              </Badge>
             </li>
           ))}
         </ul>
